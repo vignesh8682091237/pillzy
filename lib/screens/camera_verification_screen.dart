@@ -146,6 +146,8 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     
     // Logic: If any object is detected (even if not classified as a pill specifically)
     if (objects.isNotEmpty || _showManualPillBypass) {
+      // Small delay to let user see the detection
+      await Future.delayed(const Duration(milliseconds: 500));
       _proceedToFace();
     }
   }
@@ -169,25 +171,33 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
 
     final face = faces.first;
     
-    // In ML Kit, 'mouth' is a landmark. We check if it's detected.
-    final mouth = face.landmarks[FaceLandmarkType.bottomMouth];
+    // Calculate mouth opening based on landmarks
+    final topMouth = face.landmarks[FaceLandmarkType.topMouth];
+    final bottomMouth = face.landmarks[FaceLandmarkType.bottomMouth];
     
     if (_currentStep == VerificationStep.mouthOpening) {
-      // For this free version without custom training, we use smiling probability 
-      // as a proxy for mouth movement, or simply the detection of a face in close proximity.
-      // A more robust way would be landmark distance calculation.
-      if ((face.smilingProbability ?? 0) > 0.5 || mouth != null) {
+      bool isMouthOpen = false;
+      
+      if (topMouth != null && bottomMouth != null) {
+        // Calculate distance between top and bottom lips
+        final distance = (topMouth.position.y - bottomMouth.position.y).abs();
+        // If distance is significant, consider mouth open
+        if (distance > 15) isMouthOpen = true; 
+      }
+      
+      // Fallback to smiling or high probability if landmarks fail
+      if (isMouthOpen || (face.smilingProbability ?? 0) > 0.7) {
         setState(() {
           _mouthOpen = true;
-          _instruction = "Mouth Open. Swallow the pill now.";
+          _instruction = "Mouth Open detected! Now swallow the pill.";
           _verificationProgress = 0.66;
           _currentStep = VerificationStep.swallowing;
         });
       }
     } else if (_currentStep == VerificationStep.swallowing) {
-      // Simulate swallowing delay
-      await Future.delayed(const Duration(seconds: 2));
-      _completeVerification();
+      // Wait for a clear swallow action (simulated by 3 seconds of face presence)
+      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) _completeVerification();
     }
   }
 
