@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pillzy Backend Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f0f4f8; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 500px; margin: auto; }
+        h2 { color: #2d7dd2; }
+        input, button { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc; }
+        button { background: #2d7dd2; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #2361a6; }
+        #result { margin-top: 20px; padding: 10px; background: #e8f0fe; border-radius: 5px; font-size: 14px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Pillzy API Test</h2>
+        <p>பின்தளம் (Backend) மற்றும் Firebase இணைப்பைச் சோதிக்க கீழே உள்ள படிவத்தைப் பயன்படுத்தவும்.</p>
+        
+        <input type="text" id="name" placeholder="மருந்தின் பெயர் (e.g. Paracetamol)">
+        <input type="text" id="dosage" placeholder="அளவு (e.g. 500mg)">
+        <input type="text" id="time" placeholder="நேரம் (e.g. Morning)">
+        <input type="text" id="userId" placeholder="User ID (e.g. user_123)">
+        
+        <button onclick="addMedicine()">மருந்தைச் சேர் (Add Medicine)</button>
+        <button onclick="getMedicines()">மருந்துகளைப் பார் (Get Medicines)</button>
+        
+        <div id="result">முடிவுகள் இங்கே காண்பிக்கப்படும்...</div>
+    </div>
+
+    <script>
+        async function addMedicine() {
+            const data = {
+                name: document.getElementById('name').value,
+                dosage: document.getElementById('dosage').value,
+                time: document.getElementById('time').value,
+                user_id: document.getElementById('userId').value
+            };
+
+            const res = await fetch('http://localhost:8000/add-medicine', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            document.getElementById('result').innerText = JSON.stringify(result, null, 2);
+        }
+
+        async function getMedicines() {
+            const userId = document.getElementById('userId').value;
+            const res = await fetch(`http://localhost:8000/get-medicines/${userId}`);
+            const result = await res.json();
+            document.getElementById('result').innerText = JSON.stringify(result, null, 2);
+        }
+    </script>
+</body>
+</html>
