@@ -4,6 +4,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/services.dart';
 
 enum VerificationStep { pillDetection, mouthOpening, swallowing, completed }
 
@@ -211,14 +213,16 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     if (_cameraController == null) return null;
 
     final sensorOrientation = _cameraController!.description.sensorOrientation;
-    InputImageRotation? rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+    InputImageRotation? rotation;
+    if (Platform.isAndroid) {
+      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+    } else {
+      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+    }
     if (rotation == null) return null;
 
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null || (format != InputImageFormat.yuv420 && format != InputImageFormat.bgra8888)) return null;
-
-    if (image.planes.length != 1 && format == InputImageFormat.bgra8888) return null;
-    if (image.planes.length != 3 && format == InputImageFormat.yuv420) return null;
+    if (format == null) return null;
 
     final bytes = WriteBuffer();
     for (final plane in image.planes) {
