@@ -48,6 +48,7 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
         enableLandmarks: true,
         enableClassification: true,
         enableTracking: true,
+        enableContours: true,
       ),
     );
 
@@ -171,18 +172,21 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
 
     final face = faces.first;
     
-    // Calculate mouth opening based on landmarks
-    final topMouth = face.landmarks[FaceLandmarkType.topMouth];
-    final bottomMouth = face.landmarks[FaceLandmarkType.bottomMouth];
+    // Calculate mouth opening based on contours
+    final upperLip = face.contours[FaceContourType.upperLipTop];
+    final lowerLip = face.contours[FaceContourType.lowerLipBottom];
     
     if (_currentStep == VerificationStep.mouthOpening) {
       bool isMouthOpen = false;
       
-      if (topMouth != null && bottomMouth != null) {
-        // Calculate distance between top and bottom lips
-        final distance = (topMouth.position.y - bottomMouth.position.y).abs();
+      if (upperLip != null && lowerLip != null && upperLip.points.isNotEmpty && lowerLip.points.isNotEmpty) {
+        // Use the first point for a simple distance check
+        final topY = upperLip.points.first.y;
+        final bottomY = lowerLip.points.first.y;
+        final distance = (topY - bottomY).abs();
+        
         // If distance is significant, consider mouth open
-        if (distance > 15) isMouthOpen = true; 
+        if (distance > 20) isMouthOpen = true; 
       }
       
       // Fallback to smiling or high probability if landmarks fail
