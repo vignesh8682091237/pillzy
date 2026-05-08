@@ -25,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _adherenceRecords = [];
   bool _isLoading = true;
   late Map<String, dynamic> _currentProfile;
-  Timer? _webTimer;
+  Timer? _alertTimer;
   final Set<String> _alertedTimes = {};
 
   @override
@@ -33,9 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _currentProfile = Map<String, dynamic>.from(widget.profileData);
     _fetchMedicines();
-    if (kIsWeb) {
-      _startWebTimer();
-    }
+    _startAlertTimer();
 
     // Listen for notification action clicks
     NotificationService.onNotificationClick.stream.listen((actionId) {
@@ -62,12 +60,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _webTimer?.cancel();
+    _alertTimer?.cancel();
     super.dispose();
   }
 
-  void _startWebTimer() {
-    _webTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+  void _startAlertTimer() {
+    _alertTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _checkMedicinesForAlert();
     });
   }
@@ -83,6 +81,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentTimeStr = "$displayHour:${minute.toString().padLeft(2, '0')} $period";
     final currentTimeStrWithZero = "${displayHour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period";
     
+    // Debug log to see what the app is checking
+    debugPrint("Checking alerts for: $currentTimeStr / $currentTimeStrWithZero");
+    
     for (var med in _medicines) {
       final times = med['times'] as List<dynamic>? ?? [];
       for (var t in times) {
@@ -92,9 +93,10 @@ class _HomeScreenState extends State<HomeScreen> {
         if (medTime == currentTimeStr || medTime == currentTimeStrWithZero) {
           final alertKey = "${med['id']}_$medTime";
           if (!_alertedTimes.contains(alertKey)) {
+            debugPrint("ALERT TRIGGERED for ${med['name']} at $medTime");
             _alertedTimes.add(alertKey);
             
-            // Trigger System Notification on Web
+            // Trigger System Notification
             NotificationService.showImmediateNotification(
               id: med['id'].hashCode,
               title: "Time for ${med['name']}",

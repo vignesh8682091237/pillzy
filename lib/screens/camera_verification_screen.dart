@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:async';
 
 enum VerificationStep { pillDetection, mouthOpening, swallowing, completed }
 
@@ -36,6 +37,7 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     WidgetsBinding.instance.addObserver(this);
     _initializeML();
     _initCamera();
+    _startBypassTimer();
   }
 
   void _initializeML() {
@@ -56,15 +58,13 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
   }
 
   Future<void> _initCamera() async {
-    if (kIsWeb) {
-      setState(() {
-        _isInitialized = true;
-        _instruction = "AI Verification is only available on Mobile. Please use Manual Verification for Web.";
-      });
-      return;
-    }
     try {
       final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _instruction = "No camera found");
+        return;
+      }
+
       final front = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.front,
         orElse: () => cameras.first,
@@ -79,17 +79,26 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
 
       await _cameraController!.initialize();
       
-      _cameraController!.startImageStream(_processCameraImage);
+      // On Web, we don't start the image stream as ML Kit doesn't support it directly here
+      if (!kIsWeb) {
+        _cameraController!.startImageStream(_processCameraImage);
+      } else {
+        setState(() {
+          _instruction = "Verify your medication in front of the camera.";
+        });
+      }
       
       if (mounted) setState(() => _isInitialized = true);
     } catch (e) {
       debugPrint('Camera error: $e');
+      if (mounted) setState(() => _instruction = "Camera initialization failed: $e");
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _bypassTimer?.cancel();
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
     _faceDetector.close();
@@ -119,18 +128,37 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     }
   }
 
+  bool _showManualPillBypass = false;
+  Timer? _bypassTimer;
+
+  void _startBypassTimer() {
+    _bypassTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _currentStep == VerificationStep.pillDetection) {
+        setState(() => _showManualPillBypass = true);
+      }
+    });
+  }
+
   Future<void> _detectPill(InputImage inputImage) async {
     final objects = await _objectDetector.processImage(inputImage);
     
-    // Logic: If any small object is detected in the frame
-    if (objects.isNotEmpty) {
-      setState(() {
-        _pillDetected = true;
-        _instruction = "Pill Detected! Now bring it to your mouth.";
-        _verificationProgress = 0.33;
-        _currentStep = VerificationStep.mouthOpening;
-      });
+    // Logic: If any object is detected (even if not classified as a pill specifically)
+    if (objects.isNotEmpty || _showManualPillBypass) {
+      _proceedToFace();
     }
+  }
+
+  void _proceedToFace() {
+    if (_currentStep != VerificationStep.pillDetection) return;
+    _bypassTimer?.cancel();
+    setState(() {
+      _pillDetected = true;
+      _instruction = "Pill Detected! Now bring it to your mouth.";
+      _verificationProgress = 0.33;
+      _currentStep = VerificationStep.mouthOpening;
+      _showManualPillBypass = false;
+    });
+    _startBypassTimer(); // Restart timer for the face step
   }
 
   Future<void> _detectFaceAndMouth(InputImage inputImage) async {
@@ -216,10 +244,14 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
         children: [
           // Camera Preview
           if (_isInitialized && _cameraController != null)
-            Center(
-              child: AspectRatio(
-                aspectRatio: 1 / _cameraController!.value.aspectRatio,
-                child: CameraPreview(_cameraController!),
+            SizedBox.expand(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _cameraController!.value.previewSize?.height ?? 1080,
+                  height: _cameraController!.value.previewSize?.width ?? 1920,
+                  child: CameraPreview(_cameraController!),
+                ),
               ),
             ),
 
@@ -230,7 +262,7 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
                 _buildHeader(),
                 const Spacer(),
                 _buildVerificationUI(),
-                if (kIsWeb) ...[
+                if (kIsWeb && _currentStep != VerificationStep.completed) ...[
                   const SizedBox(height: 20),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -238,12 +270,29 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orangeAccent,
                         foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      onPressed: _completeVerification,
-                      icon: const Icon(Icons.check_circle_outline),
-                      label: const Text("Manual Verify (Web Only)", style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        if (_currentStep == VerificationStep.pillDetection) {
+                          _proceedToFace();
+                        } else if (_currentStep == VerificationStep.mouthOpening) {
+                          setState(() {
+                            _mouthOpen = true;
+                            _instruction = "Mouth Open. Swallow the pill now.";
+                            _verificationProgress = 0.66;
+                            _currentStep = VerificationStep.swallowing;
+                          });
+                        } else if (_currentStep == VerificationStep.swallowing) {
+                          _completeVerification();
+                        }
+                      },
+                      icon: const Icon(Icons.arrow_forward_ios_rounded),
+                      label: Text(
+                        _currentStep == VerificationStep.pillDetection ? "I have the pill" :
+                        _currentStep == VerificationStep.mouthOpening ? "Mouth is open" : "Swallowed it",
+                        style: const TextStyle(fontWeight: FontWeight.bold)
+                      ),
                     ),
                   ),
                 ],
@@ -318,6 +367,22 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
             "Step ${_currentStep.index + 1} of 3",
             style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
+          if (_showManualPillBypass && _currentStep == VerificationStep.pillDetection) ...[
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _proceedToFace,
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+              child: const Text("Pill in Hand (Manual)", style: TextStyle(color: Colors.white)),
+            ),
+          ],
+          if (_showManualPillBypass && (_currentStep == VerificationStep.mouthOpening || _currentStep == VerificationStep.swallowing)) ...[
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _completeVerification,
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+              child: const Text("Skip Face AI (Manual)", style: TextStyle(color: Colors.white)),
+            ),
+          ],
         ],
       ),
     );

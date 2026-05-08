@@ -116,7 +116,18 @@ class NotificationService {
     );
 
     const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
-    await _notificationsPlugin.show(id, title, body, platformDetails);
+    
+    // Ensure initialization for background isolates
+    try {
+      await _notificationsPlugin.show(id, title, body, platformDetails);
+    } catch (e) {
+      // If plugin was not initialized in this isolate, re-init and show
+      const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+      await _notificationsPlugin.initialize(
+        const InitializationSettings(android: initializationSettingsAndroid),
+      );
+      await _notificationsPlugin.show(id, title, body, platformDetails);
+    }
   }
 
   static Future<void> scheduleNotification({
