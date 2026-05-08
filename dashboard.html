@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pillzy | Admin Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00b4d8;
+            --secondary: #0077b6;
+            --accent: #caf0f8;
+            --bg: #03045e;
+            --card-bg: rgba(255, 255, 255, 0.1);
+            --text: #ffffff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background: radial-gradient(circle at top left, #03045e, #023e8a);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 50px;
+            background: var(--card-bg);
+            padding: 20px 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--primary);
+        }
+
+        .logo span {
+            color: var(--text);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 24px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            font-size: 14px;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .value {
+            font-size: 36px;
+            font-weight: 700;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 24px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 30px;
+        }
+
+        h2 {
+            margin-bottom: 25px;
+            font-size: 22px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: var(--secondary);
+        }
+
+        .med-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .med-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .med-icon {
+            width: 50px;
+            height: 50px;
+            background: rgba(0, 180, 216, 0.2);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .med-info h4 {
+            font-size: 18px;
+            margin-bottom: 4px;
+        }
+
+        .med-info p {
+            font-size: 14px;
+            color: var(--accent);
+        }
+
+        .user-badge {
+            background: var(--primary);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 50px;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .med-item {
+            animation: fadeIn 0.5s ease forwards;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">💊 Pillzy <span>Dashboard</span></div>
+            <div id="status-dot" style="display: flex; align-items: center; gap: 8px; font-size: 14px;">
+                <div style="width: 10px; height: 10px; background: #00ff00; border-radius: 50%; box-shadow: 0 0 10px #00ff00;"></div>
+                Backend Connected
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Medicines</h3>
+                <div class="value" id="total-meds">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active Users</h3>
+                <div class="value" id="total-users">Loading...</div>
+            </div>
+            <div class="stat-card">
+                <h3>Server Status</h3>
+                <div class="value" style="color: #00ff00; font-size: 24px;">Online</div>
+            </div>
+        </div>
+
+        <div class="content-grid">
+            <div class="card">
+                <h2>
+                    Medicine Inventory
+                    <button class="refresh-btn" onclick="fetchData()">Refresh Data</button>
+                </h2>
+                <div class="med-list" id="med-list">
+                    <div class="empty-state">No medicines found in database.</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>System Logs</h2>
+                <div id="logs" style="font-family: monospace; font-size: 12px; color: var(--accent); line-height: 1.6;">
+                    [INFO] Dashboard initialized...<br>
+                    [INFO] Connecting to FastAPI on port 8000...<br>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8000";
+
+        async function fetchData() {
+            const medList = document.getElementById('med-list');
+            const totalMeds = document.getElementById('total-meds');
+            const logs = document.getElementById('logs');
+
+            logs.innerHTML += `[FETCH] Requesting medicines for guest...<br>`;
+
+            try {
+                // Fetch for common IDs
+                const response = await fetch(`${API_BASE}/get-medicines/guest`);
+                const data = await response.json();
+                
+                if (data.medicines && data.medicines.length > 0) {
+                    totalMeds.innerText = data.medicines.length;
+                    medList.innerHTML = '';
+                    data.medicines.forEach(med => {
+                        medList.innerHTML += `
+                            <div class="med-item">
+                                <div class="med-icon">💊</div>
+                                <div class="med-info">
+                                    <h4>${med.name}</h4>
+                                    <p>${med.dosage} • ${med.frequency}</p>
+                                    <div class="user-badge">${med.user_id}</div>
+                                </div>
+                                <div style="margin-left: auto; color: var(--primary); font-weight: 600;">
+                                    ${med.time || 'As needed'}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    logs.innerHTML += `[SUCCESS] Loaded ${data.medicines.length} medicines.<br>`;
+                } else {
+                    medList.innerHTML = '<div class="empty-state">No medicines found for user "guest". Use the app to add some!</div>';
+                    logs.innerHTML += `[INFO] No data returned for guest.<br>`;
+                }
+            } catch (err) {
+                console.error(err);
+                logs.innerHTML += `<span style="color: #ff4d4d;">[ERROR] Failed to connect: ${err.message}</span><br>`;
+            }
+        }
+
+        // Initial fetch
+        fetchData();
+        // Auto-refresh every 30s
+        setInterval(fetchData, 30000);
+    </script>
+</body>
+</html>
