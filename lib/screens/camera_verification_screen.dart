@@ -33,13 +33,20 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
   bool _mouthOpen = false;
   double _verificationProgress = 0.0;
 
+  // Timers and logic control
+  int _secondsElapsed = 0;
+  Timer? _overallStepTimer;
+  bool _canShowManualButton = false;
+  bool _isAutoAdvancing = false;
+  bool _isFaceVisible = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeML();
     _initCamera();
-    _startBypassTimer();
+    _startCurrentStepTimer();
   }
 
   void _initializeML() {
@@ -101,7 +108,7 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _bypassTimer?.cancel();
+    _overallStepTimer?.cancel();
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
     _faceDetector.close();
@@ -119,6 +126,9 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
       final inputImage = _inputImageFromCameraImage(image);
       if (inputImage == null) return;
 
+      // Always check for face visibility in every step
+      await _checkFaceVisibility(inputImage);
+
       if (_currentStep == VerificationStep.pillDetection) {
         await _detectPill(inputImage);
       } else if (_currentStep == VerificationStep.mouthOpening || _currentStep == VerificationStep.swallowing) {
@@ -131,39 +141,96 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     }
   }
 
-  bool _showManualPillBypass = false;
-  Timer? _bypassTimer;
+  Future<void> _checkFaceVisibility(InputImage inputImage) async {
+    final faces = await _faceDetector.processImage(inputImage);
+    if (mounted) {
+      setState(() {
+        _isFaceVisible = faces.isNotEmpty;
+      });
+    }
+  }
 
-  void _startBypassTimer() {
-    _bypassTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted && _currentStep == VerificationStep.pillDetection) {
-        setState(() => _showManualPillBypass = true);
+  void _startCurrentStepTimer() {
+    _overallStepTimer?.cancel();
+    _secondsElapsed = 0;
+    _canShowManualButton = false;
+    _isAutoAdvancing = false;
+
+    _overallStepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      
+      // Timer ONLY increments if a face is visible (for all steps)
+      if (_isFaceVisible || kIsWeb) {
+        setState(() {
+          _secondsElapsed++;
+          
+          // At 7 seconds, show manual button
+          if (_secondsElapsed >= 7) {
+            _canShowManualButton = true;
+          }
+
+          // At 10 seconds, auto advance if not already completed
+          if (_secondsElapsed >= 10 && !_isAutoAdvancing) {
+            _isAutoAdvancing = true;
+            _handleAutoAdvance();
+          }
+        });
       }
     });
+  }
+
+  void _handleAutoAdvance() {
+    // Only auto-advance if face is visible (or on web for testing)
+    if (!_isFaceVisible && !kIsWeb) {
+      _isAutoAdvancing = false; // Reset so it can try again when face returns
+      return;
+    }
+
+    if (_currentStep == VerificationStep.pillDetection) {
+      _proceedToFace();
+    } else if (_currentStep == VerificationStep.mouthOpening) {
+      _proceedToSwallow();
+    } else if (_currentStep == VerificationStep.swallowing) {
+      _completeVerification();
+    }
   }
 
   Future<void> _detectPill(InputImage inputImage) async {
     final objects = await _objectDetector.processImage(inputImage);
     
     // Logic: If any object is detected (even if not classified as a pill specifically)
-    if (objects.isNotEmpty || _showManualPillBypass) {
-      // Small delay to let user see the detection
-      await Future.delayed(const Duration(milliseconds: 500));
-      _proceedToFace();
+    if (objects.isNotEmpty) {
+      // AI Identified. Now check if min 5 seconds passed.
+      if (_secondsElapsed >= 5) {
+        _proceedToFace();
+      }
     }
   }
 
   void _proceedToFace() {
-    if (_currentStep != VerificationStep.pillDetection) return;
-    _bypassTimer?.cancel();
+    if (_currentStep != VerificationStep.pillDetection || _isProcessing) return;
+    
     setState(() {
       _pillDetected = true;
       _instruction = "Pill Detected! Now bring it to your mouth.";
       _verificationProgress = 0.33;
       _currentStep = VerificationStep.mouthOpening;
-      _showManualPillBypass = false;
     });
-    _startBypassTimer(); // Restart timer for the face step
+    
+    _startCurrentStepTimer(); // Reset timer for the next step
+  }
+
+  void _proceedToSwallow() {
+    if (_currentStep != VerificationStep.mouthOpening) return;
+    
+    setState(() {
+      _mouthOpen = true;
+      _instruction = "Mouth Open detected! Now swallow the pill.";
+      _verificationProgress = 0.66;
+      _currentStep = VerificationStep.swallowing;
+    });
+    
+    _startCurrentStepTimer(); // Reset timer for the next step
   }
 
   Future<void> _detectFaceAndMouth(InputImage inputImage) async {
@@ -180,34 +247,31 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
       bool isMouthOpen = false;
       
       if (upperLip != null && lowerLip != null && upperLip.points.isNotEmpty && lowerLip.points.isNotEmpty) {
-        // Use the first point for a simple distance check
         final topY = upperLip.points.first.y;
         final bottomY = lowerLip.points.first.y;
         final distance = (topY - bottomY).abs();
         
-        // If distance is significant, consider mouth open
         if (distance > 20) isMouthOpen = true; 
       }
       
-      // Fallback to smiling or high probability if landmarks fail
       if (isMouthOpen || (face.smilingProbability ?? 0) > 0.7) {
-        setState(() {
-          _mouthOpen = true;
-          _instruction = "Mouth Open detected! Now swallow the pill.";
-          _verificationProgress = 0.66;
-          _currentStep = VerificationStep.swallowing;
-        });
+        // AI Identified. Check if min 5s passed.
+        if (_secondsElapsed >= 5) {
+          _proceedToSwallow();
+        }
       }
     } else if (_currentStep == VerificationStep.swallowing) {
-      // Wait for a clear swallow action (simulated by 3 seconds of face presence)
-      await Future.delayed(const Duration(seconds: 3));
-      if (mounted) _completeVerification();
+      // Swallowing detection (simulated) - if face present and min 5s passed
+      if (_secondsElapsed >= 5) {
+        _completeVerification();
+      }
     }
   }
 
   void _completeVerification() {
     if (_currentStep == VerificationStep.completed) return;
     
+    _overallStepTimer?.cancel();
     setState(() {
       _currentStep = VerificationStep.completed;
       _instruction = "Verification Successful!";
@@ -273,6 +337,33 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
               ),
             ),
 
+          // Face Warning Overlay
+          if (_isInitialized && !_isFaceVisible && !kIsWeb && _currentStep != VerificationStep.completed)
+            Positioned(
+              top: 100,
+              left: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.face_retouching_off, color: Colors.white),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "Face not detected! Please look at the camera.",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           // Glass Overlay
           SafeArea(
             child: Column(
@@ -292,15 +383,11 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () {
+                        if (_secondsElapsed < 5) return; // Prevent manual before 5s
                         if (_currentStep == VerificationStep.pillDetection) {
                           _proceedToFace();
                         } else if (_currentStep == VerificationStep.mouthOpening) {
-                          setState(() {
-                            _mouthOpen = true;
-                            _instruction = "Mouth Open. Swallow the pill now.";
-                            _verificationProgress = 0.66;
-                            _currentStep = VerificationStep.swallowing;
-                          });
+                          _proceedToSwallow();
                         } else if (_currentStep == VerificationStep.swallowing) {
                           _completeVerification();
                         }
@@ -382,23 +469,28 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
           ),
           const SizedBox(height: 12),
           Text(
+            "Time: ${_secondsElapsed}s",
+            style: const TextStyle(color: Colors.tealAccent, fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Text(
             "Step ${_currentStep.index + 1} of 3",
             style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
-          if (_showManualPillBypass && _currentStep == VerificationStep.pillDetection) ...[
+          if (_canShowManualButton && _currentStep != VerificationStep.completed) ...[
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _proceedToFace,
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-              child: const Text("Pill in Hand (Manual)", style: TextStyle(color: Colors.white)),
-            ),
-          ],
-          if (_showManualPillBypass && (_currentStep == VerificationStep.mouthOpening || _currentStep == VerificationStep.swallowing)) ...[
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _completeVerification,
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-              child: const Text("Skip Face AI (Manual)", style: TextStyle(color: Colors.white)),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _handleAutoAdvance,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.touch_app, color: Colors.white),
+                label: const Text("Manual Verify", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
             ),
           ],
         ],
