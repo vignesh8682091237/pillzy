@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 enum VerificationStep { pillDetection, mouthOpening, swallowing, completed }
@@ -20,7 +19,6 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
   // Verification State
   VerificationStep _currentStep = VerificationStep.pillDetection;
   String _instruction = "Show the pill in your palm";
-  double _verificationProgress = 0.0;
 
   // Timers and logic control
   int _secondsElapsed = 0;
@@ -50,9 +48,8 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
       
       _cameraController = CameraController(
         front, 
-        ResolutionPreset.medium, 
+        ResolutionPreset.high, 
         enableAudio: false,
-        imageFormatGroup: kIsWeb ? ImageFormatGroup.jpeg : ImageFormatGroup.yuv420,
       );
 
       await _cameraController!.initialize();
@@ -83,13 +80,13 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
       setState(() {
         _secondsElapsed++;
         
-        // At 6 seconds, show the manual button (gives 4s for manual entry)
-        if (_secondsElapsed >= 6) {
+        // At 8 seconds, show the manual button
+        if (_secondsElapsed >= 8) {
           _canShowManualButton = true;
         }
 
-        // At 10 seconds, automatically move to the next stage (Total 30s for 3 steps)
-        if (_secondsElapsed >= 10) {
+        // At 13 seconds, automatically move to the next stage (Total ~40s for 3 steps)
+        if (_secondsElapsed >= 13) {
           _handleAutoAdvance();
         }
       });
@@ -102,11 +99,9 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     setState(() {
       if (_currentStep == VerificationStep.pillDetection) {
         _instruction = "Now bring it to your mouth.";
-        _verificationProgress = 0.33;
         _currentStep = VerificationStep.mouthOpening;
       } else if (_currentStep == VerificationStep.mouthOpening) {
         _instruction = "Now swallow the pill.";
-        _verificationProgress = 0.66;
         _currentStep = VerificationStep.swallowing;
       } else if (_currentStep == VerificationStep.swallowing) {
         _completeVerification();
@@ -126,7 +121,6 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     setState(() {
       _currentStep = VerificationStep.completed;
       _instruction = "Verification Successful!";
-      _verificationProgress = 1.0;
     });
 
     Future.delayed(const Duration(seconds: 1), () {
@@ -144,7 +138,7 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
         children: [
           // Camera Preview
           if (_isInitialized && _cameraController != null)
-            SizedBox.expand(
+            Positioned.fill(
               child: FittedBox(
                 fit: BoxFit.cover,
                 child: SizedBox(
@@ -215,23 +209,6 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
               fontSize: 18,
               fontWeight: FontWeight.w500,
             ),
-          ),
-          const SizedBox(height: 20),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: _verificationProgress,
-              backgroundColor: Colors.white10,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                _currentStep == VerificationStep.completed ? Colors.greenAccent : Colors.tealAccent,
-              ),
-              minHeight: 8,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            "Time: ${_secondsElapsed}s",
-            style: const TextStyle(color: Colors.tealAccent, fontSize: 14, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
           if (_canShowManualButton && _currentStep != VerificationStep.completed) ...[
