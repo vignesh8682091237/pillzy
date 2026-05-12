@@ -37,7 +37,6 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
   int _secondsElapsed = 0;
   Timer? _overallStepTimer;
   bool _canShowManualButton = false;
-  bool _isAutoAdvancing = false;
   bool _isFaceVisible = false;
 
   @override
@@ -154,7 +153,6 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     _overallStepTimer?.cancel();
     _secondsElapsed = 0;
     _canShowManualButton = false;
-    _isAutoAdvancing = false;
 
     _overallStepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
@@ -169,11 +167,8 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
             _canShowManualButton = true;
           }
 
-          // At 10 seconds, auto advance if not already completed
-          if (_secondsElapsed >= 10 && !_isAutoAdvancing) {
-            _isAutoAdvancing = true;
-            _handleAutoAdvance();
-          }
+          // The auto-advance logic at 10 seconds has been removed per user request.
+          // The user must now manually click the button that appears when a face is detected.
         });
       }
     });
@@ -182,7 +177,6 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
   void _handleAutoAdvance() {
     // Only auto-advance if face is visible (or on web for testing)
     if (!_isFaceVisible && !kIsWeb) {
-      _isAutoAdvancing = false; // Reset so it can try again when face returns
       return;
     }
 
@@ -200,9 +194,11 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
     
     // Logic: If any object is detected (even if not classified as a pill specifically)
     if (objects.isNotEmpty) {
-      // AI Identified. Now check if min 5 seconds passed.
-      if (_secondsElapsed >= 5) {
-        _proceedToFace();
+      // AI Identified. Now enable the manual button.
+      if (mounted) {
+        setState(() {
+          _canShowManualButton = true;
+        });
       }
     }
   }
@@ -255,15 +251,19 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
       }
       
       if (isMouthOpen || (face.smilingProbability ?? 0) > 0.7) {
-        // AI Identified. Check if min 5s passed.
-        if (_secondsElapsed >= 5) {
-          _proceedToSwallow();
+        // AI Identified. Enable the manual button.
+        if (mounted) {
+          setState(() {
+            _canShowManualButton = true;
+          });
         }
       }
     } else if (_currentStep == VerificationStep.swallowing) {
-      // Swallowing detection (simulated) - if face present and min 5s passed
-      if (_secondsElapsed >= 5) {
-        _completeVerification();
+      // Swallowing detection (simulated) - if face present, enable button
+      if (mounted) {
+        setState(() {
+          _canShowManualButton = true;
+        });
       }
     }
   }
@@ -292,15 +292,31 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
 
     final sensorOrientation = _cameraController!.description.sensorOrientation;
     InputImageRotation? rotation;
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      var rotationValue = sensorOrientation;
+      // Adjust rotation for front camera on Android
+      if (_cameraController!.description.lensDirection == CameraLensDirection.front) {
+        rotationValue = (sensorOrientation + 0) % 360;
+      }
+      rotation = InputImageRotationValue.fromRawValue(rotationValue);
+    } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
     } else {
+      // Default for Web or other platforms
       rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
     }
+    
     if (rotation == null) return null;
 
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null) return null;
+    bool isAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    bool isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+    if (format == null || (isAndroid && format != InputImageFormat.yuv420) || (isIOS && format != InputImageFormat.bgra8888)) {
+      // Fallback logic
+    }
+
+    if (image.planes.length != (isAndroid ? 3 : 1)) return null;
 
     final bytes = WriteBuffer();
     for (final plane in image.planes) {
@@ -312,7 +328,7 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
       metadata: InputImageMetadata(
         size: Size(image.width.toDouble(), image.height.toDouble()),
         rotation: rotation,
-        format: format,
+        format: format ?? (Platform.isAndroid ? InputImageFormat.yuv420 : InputImageFormat.bgra8888),
         bytesPerRow: image.planes[0].bytesPerRow,
       ),
     );
@@ -477,7 +493,7 @@ class _CameraVerificationScreenState extends State<CameraVerificationScreen> wit
             "Step ${_currentStep.index + 1} of 3",
             style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
-          if (_canShowManualButton && _currentStep != VerificationStep.completed) ...[
+          if (_canShowManualButton && _currentStep != VerificationStep.completed && (_isFaceVisible || kIsWeb)) ...[
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
